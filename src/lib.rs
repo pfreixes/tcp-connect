@@ -1,4 +1,4 @@
-//! A Tokio connnect ~ drop in replacment with asteriods.
+//! TCP connect drop in replacment with asteriods.
 //!
 //! ### Connect to any host with some enhanced functionalities like DNS caching and more.
 //! [TCPConnect] is an stateful instance that can be used for connecting to any host as you would do
@@ -31,12 +31,14 @@
 //!   Ok(())
 //!}
 //! ```
+mod dns_cache;
 mod inner;
-use crate::inner::{TCPConnectShared};
+use crate::inner::TCPConnectShared;
 use std::io;
 use std::sync::Arc;
+use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::time::Duration;
-use tokio::net::{ToSocketAddrs, TcpStream};
+pub use dns_cache::DNSCache;
 
 /// TCP stream connector with asteriods.
 ///
@@ -80,19 +82,34 @@ impl Clone for TCPConnect {
 #[derive(Debug, Clone, Copy)]
 pub struct TCPConnectBuilder {
     dns_ttl: Duration,
+    dns_max_stale_time: Duration,
 }
 
 impl TCPConnectBuilder {
     /// Set the DNS TTL.
     ///
-    /// By default, it is 60 seconds.
+    /// By default, this is set to 60 seconds.
     pub fn dns_ttl(mut self, dns_ttl: Duration) -> TCPConnectBuilder {
         self.dns_ttl = dns_ttl;
         self
     }
+
+    /// Set the maximum time for returning a stale DNS resolution result.
+    ///
+    /// After the DNS TTL (Time To Live) expires, new requests can be served
+    /// stale data while a new resolution is performed in the background. Once
+    /// the stale time elapses, new requests will wait until the background resolution
+    /// is completed.
+    ///
+    /// By default, this is set to 1 second.
+    pub fn dns_max_stale_time(mut self, dns_max_stale_time: Duration) -> TCPConnectBuilder {
+        self.dns_max_stale_time = dns_max_stale_time;
+        self
+    }
+
     /// Build the [`TCPConnect`] instance.
     pub fn build(self) -> TCPConnect {
-        let inner = Arc::new(TCPConnectShared::new(self.dns_ttl));
+        let inner = Arc::new(TCPConnectShared::new(self.dns_ttl, self.dns_max_stale_time));
         TCPConnect { inner }
     }
 }
@@ -101,6 +118,7 @@ impl Default for TCPConnectBuilder {
     fn default() -> Self {
         TCPConnectBuilder {
             dns_ttl: Duration::from_secs(60),
+            dns_max_stale_time: Duration::from_secs(1),
         }
     }
 }
