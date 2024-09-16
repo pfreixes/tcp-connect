@@ -2,6 +2,10 @@
 name = "tcp-connect"
 version = "0.1.0"
 edition = "2021"
+description = "TCP connect is a replacment of the `std::net::TcpStream::connect` with DNS caching"
+license = "MIT"
+repository = "https://github.com/pfreixes/tcp-connect"
+authors = ["pfreixes"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
