@@ -1,4 +1,4 @@
-TCP connect is a ~ drop in replacment of the `std::net::TcpStream::connect` with for DNS caching.
+TCP connect is a ~ drop in replacment of the `std::net::TcpStream::connect` with DNS caching.
 
 `TCPConnect` allows you to cache the DNS resolution result for a configured TTL, once cached
 subsequent calls will pick a random IP adddress from the original list of IP addresses
