@@ -5,13 +5,10 @@ use rand::prelude::*;
 use std::collections::HashSet;
 use std::io;
 use std::io::{Error, ErrorKind};
-#[cfg(not(feature = "tokio"))]
 use std::net::TcpStream;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
-#[cfg(feature = "tokio")]
-use tokio::net::TcpStream;
 
 pub(crate) struct TCPConnectShared<
     D: DNSCache + Send + Sync + 'static,
@@ -35,29 +32,6 @@ impl<D: DNSCache + Send + Sync + 'static, R: DNSResolver + Send + Sync + 'static
         }
     }
 
-    #[cfg(feature = "tokio")]
-    pub(crate) async fn connect(&self, addr: &str) -> io::Result<TcpStream> {
-        let (host, port) = host_port(addr)?;
-
-        if let Ok(_) = host.parse::<IpAddr>() {
-            return TcpStream::connect(addr).await;
-        }
-
-        let future = async {
-            // TODO: Tokio offload this to a differnt worker, we need to do the same
-            self.get_addr(&host, &mut rand::thread_rng());
-        };
-
-        match future.await {
-            Ok(mut socket_addr) => {
-                socket_addr.set_port(port);
-                TcpStream::connect(socket_addr).await
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    #[cfg(not(feature = "tokio"))]
     pub(crate) fn connect(&self, addr: &str) -> io::Result<TcpStream> {
         let (host, port) = host_port(addr)?;
 
@@ -228,83 +202,21 @@ mod tests {
         assert_eq!(lookup_calls.load(Ordering::Relaxed), 1);
     }
 
-    #[cfg(not(feature = "tokio"))]
-    mod no_tokio_tests {
-        use super::*;
-
-        #[test]
-        fn tcp_connect_shared_connect_invalid_addr() {
-            let tcp_connect_shared = TCPConnectShared::new(
-                Arc::new(MockDNSCacheBuilder::new().build()),
-                Arc::new(MockDNSResolverBuilder::new().build()),
-            );
-            assert!(tcp_connect_shared.connect("hostnamewithoutport").is_err());
-        }
-
-        #[test]
-        fn tcp_connect_shared_connect_invalid_port() {
-            let tcp_connect_shared = TCPConnectShared::new(
-                Arc::new(MockDNSCacheBuilder::new().build()),
-                Arc::new(MockDNSResolverBuilder::new().build()),
-            );
-            assert!(tcp_connect_shared.connect("hostname:invalidport").is_err());
-        }
-    }
-
-    #[cfg(feature = "tokio")]
-    mod no_tokio_tests {
-        use super::*;
-
-        #[tokio::test]
-        async fn tcp_connect_shared_connect_invalid_addr() {
-            let tcp_connect_shared = TCPConnectShared::new(
-                Arc::new(MockDNSCacheBuilder::new().build()),
-                Arc::new(MockDNSResolverBuilder::new().build()),
-            );
-            assert!(tcp_connect_shared
-                .connect("hostnamewithoutport")
-                .await
-                .is_err());
-        }
-
-        #[tokio::test]
-        async fn tcp_connect_shared_connect_invalid_port() {
-            let tcp_connect_shared = TCPConnectShared::new(
-                Arc::new(MockDNSCacheBuilder::new().build()),
-                Arc::new(MockDNSResolverBuilder::new().build()),
-            );
-            assert!(tcp_connect_shared
-                .connect("hostname:invalidport")
-                .await
-                .is_err());
-        }
-    }
-
-    //TODO!!!!!
-    /*
     #[test]
-    fn dns_cache_pick_next_addr() {
-        let lookup_calls = Arc::new(AtomicU32::new(0));
-        let mock = Arc::new(MockDNSResolver::default(lookup_calls.clone()));
-        let cache = InMemoryDNSCache::new(Duration::from_secs(10), Duration::from_secs(10), mock);
-        let rng = &mut StepRng::new(0, 1);
-
-        assert_eq!(
-            cache.lookup("foo", rng).unwrap(),
-            "192.168.0.1:80".parse().unwrap()
+    fn tcp_connect_shared_connect_invalid_addr() {
+        let tcp_connect_shared = TCPConnectShared::new(
+            Arc::new(MockDNSCacheBuilder::new().build()),
+            Arc::new(MockDNSResolverBuilder::new().build()),
         );
-        assert_eq!(
-            cache.lookup("foo", rng).unwrap(),
-            "192.168.0.2:80".parse().unwrap()
-        );
-        assert_eq!(
-            cache.lookup("foo", rng).unwrap(),
-            "192.168.0.1:80".parse().unwrap()
-        );
-        assert_eq!(
-            cache.lookup("foo", rng).unwrap(),
-            "192.168.0.2:80".parse().unwrap()
-        );
+        assert!(tcp_connect_shared.connect("hostnamewithoutport").is_err());
     }
-    */
+
+    #[test]
+    fn tcp_connect_shared_connect_invalid_port() {
+        let tcp_connect_shared = TCPConnectShared::new(
+            Arc::new(MockDNSCacheBuilder::new().build()),
+            Arc::new(MockDNSResolverBuilder::new().build()),
+        );
+        assert!(tcp_connect_shared.connect("hostname:invalidport").is_err());
+    }
 }

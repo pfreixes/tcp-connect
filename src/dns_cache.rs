@@ -2,8 +2,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::RwLock;
-use std::time::Instant;
-use tokio::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(crate) trait DNSCache {
     fn get(&self, hostname: &str) -> CacheResult;

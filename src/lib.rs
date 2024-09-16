@@ -1,11 +1,7 @@
-//! TCP connect drop in replacment with asteriods.
-//!
-//! ### Connect to any host with some enhanced functionalities like DNS caching and more.
-//! [TCPConnect] is an stateful instance that can be used for connecting to any host as you would do
-//! with [tokio::net::TcpStream::connect] but with enchanced functionalities.
+//! TCP connect is a ~ drop in replacment of the `std::net::TcpStream::connect` with for DNS caching.
 //!
 //! [TCPConnect] allows you to cache the DNS resolution result for a configured TTL, once cached
-//! subsequent calls will pick the next IP adddress from the original list of IP addresses
+//! subsequent calls will pick a random IP adddress from the original list of IP addresses
 //! returned, with the goal of distributing connections among all IP addresses.
 //!
 //! During cache miss stampede events [TCPConnect] will make sure that only one concurrent DNS
@@ -13,22 +9,19 @@
 //! drastically the number of DNS resolutions.
 //!
 //! In the example below, a [`TCPConnect`] is [built][TCPConnect::builder] and used to
-//! further connect to any host using a DNS TTL of 60 seconds:
+//! further connect to any host using a DNS TTL of 60 seconds and a maximum stale time of 1 second.
 //! ```
-//!use tokio::time::Duration;
-//!use tokio_comet::*;
+//!use std::time::Duration;
+//!use tcp_connect::*;
+//!use std::io::Write;
 //!
-//!#[tokio::main]
-//!async fn main() {
-//!   let comet = TCPConnect::builder()
+//!fn main() {
+//!   let tcp_connect = TCPConnect::builder()
 //!       .dns_ttl(Duration::from_secs(60))
+//!       .dns_max_stale_time(Duration::from_secs(1))
 //!       .build();
 //!
-//!   let mut stream = comet::connect("localhost:8080").await?;
-//!
-//!   stream.write_all(b"hello world!").await?;
-//!
-//!   Ok(())
+//!   tcp_connect.connect("localhost:80");
 //!}
 //! ```
 mod dns_cache;
@@ -39,20 +32,14 @@ use crate::dns_cache::InMemoryDNSCache;
 use crate::inner::TCPConnectShared;
 use crate::resolver::ToSocketAddrDNSResolver;
 use std::io;
-#[cfg(not(feature = "tokio"))]
 use std::net::TcpStream;
 use std::sync::Arc;
-#[cfg(not(feature = "tokio"))]
 use std::time::Duration;
-#[cfg(feature = "tokio")]
-use tokio::net::TcpStream;
-#[cfg(feature = "tokio")]
-use tokio::time::Duration;
 
 #[cfg(test)]
 mod test_utils;
 
-/// TCP stream connector with asteriods.
+/// TCP stream connector with DNS caching.
 ///
 /// This type is internally reference-counted and can be freely cloned.
 pub struct TCPConnect {
@@ -65,23 +52,21 @@ impl TCPConnect {
     /// # Examples
     ///
     /// ```
-    /// use tokio_comet::TCPConnect;
     /// use std::time::Duration;
+    /// use tcp_connect::TCPConnect;
     ///
     /// let comet = TCPConnect::builder()
     ///     .dns_ttl(Duration::from_secs(60))
+    ///     .dns_max_stale_time(Duration::from_secs(1))
     ///     .build();
     /// ```
     pub fn builder() -> TCPConnectBuilder {
         TCPConnectBuilder::default()
     }
 
-    #[cfg(feature = "tokio")]
-    pub async fn connect(&self, addr: &str) -> io::Result<TcpStream> {
-        self.inner.connect(addr).await
-    }
-
-    #[cfg(not(feature = "tokio"))]
+    // Connect to speciric address.
+    //
+    // Behind the scenes will make usage of the cached DNS resolution result.
     pub fn connect(&self, addr: &str) -> io::Result<TcpStream> {
         self.inner.connect(addr)
     }
@@ -114,9 +99,7 @@ impl TCPConnectBuilder {
     /// Set the maximum time for returning a stale DNS resolution result.
     ///
     /// After the DNS TTL (Time To Live) expires, new requests can be served
-    /// stale data while a new resolution is performed in the background. Once
-    /// the stale time elapses, new requests will wait until the background resolution
-    /// is completed.
+    /// stale data while a new resolution is performed in the background.
     ///
     /// By default, this is set to 1 second.
     pub fn dns_max_stale_time(mut self, dns_max_stale_time: Duration) -> TCPConnectBuilder {
